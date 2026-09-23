@@ -103,6 +103,10 @@ export async function runWriter(config, sinkOverride) {
     recoverAfterQuota = false,
     drainTimeoutMs = 10000,
     maxPending = Infinity,
+    evictAtRatio = null,
+    evictFraction = 0.2,
+    evictCheckEvery = 1000,
+    inflight = buffer === false ? 1 : 512,
   } = config;
   const engine = sinkOverride || (await createStorageEngine({ backend, backendOptions, buffer }));
   const next = createTelemetryGenerator({ worker, payloadBytes });
@@ -114,11 +118,40 @@ export async function runWriter(config, sinkOverride) {
   let shed = 0;
   const t0 = now();
 
+  // Soft-watermark eviction: at quota, IndexedDB rejects even deletes, so
+  // free space BEFORE usage reaches the quota rather than after the error.
+  const eviction = evictAtRatio ? { checks: 0, runs: 0, deleted: 0, maxUsageRatio: 0, evictMs: [] } : null;
+  let live = 0;
+  let nextCheck = evictCheckEvery;
+  const maybeEvict = async () => {
+    if (!eviction || produced < nextCheck || !engine.deleteOldest) return;
+    nextCheck = produced + evictCheckEvery;
+    const est = await estimateStorage();
+    if (!est || !est.quota) return;
+    eviction.checks++;
+    const ratio = est.usage / est.quota;
+    eviction.maxUsageRatio = Math.max(eviction.maxUsageRatio, Math.round(ratio * 1000) / 1000);
+    if (ratio < evictAtRatio) return;
+    const e0 = now();
+    await engine.flush();
+    // Evict down to the low watermark (evictAtRatio - evictFraction), however
+    // far usage overshot between checks.
+    const share = Math.max(evictFraction, 1 - Math.max(0, evictAtRatio - evictFraction) / ratio);
+    const deleted = await engine.deleteOldest(store, Math.max(100, Math.ceil(live * share)));
+    live -= deleted;
+    eviction.runs++;
+    eviction.deleted += deleted;
+    eviction.evictMs.push(now() - e0);
+  };
+
   const writeOne = () => {
     produced++;
     const p = engine
       .append(store, next())
-      .then((ms) => latencies.push(ms))
+      .then((ms) => {
+        latencies.push(ms);
+        live++;
+      })
       .catch((err) => {
         errors++;
         if (!quotaError && isQuotaError(err)) quotaError = { name: err.name, message: String(err.message || err), atRecord: produced, atMs: now() - t0 };
@@ -130,10 +163,12 @@ export async function runWriter(config, sinkOverride) {
 
   if (saturate) {
     // Throughput ceiling: keep a bounded number of writes in flight.
-    const inflight = buffer === false ? 1 : 512;
     while (now() - t0 < durationMs && !(stopOnQuota && quotaError)) {
       while (pendingWrites.size < inflight) writeOne();
       await Promise.race(pendingWrites);
+      await maybeEvict().catch((err) => {
+        if (!quotaError && isQuotaError(err)) quotaError = { name: err.name, message: String(err.message || err), atRecord: produced, atMs: now() - t0, duringEviction: true };
+      });
     }
   } else {
     await runAtRate(rateHz, durationMs, () => {
@@ -182,6 +217,7 @@ export async function runWriter(config, sinkOverride) {
     achievedPerSec: Math.round((latencies.length / elapsedMs) * 1000),
     writeLatencyMs: summarize(latencies),
     recovery,
+    eviction: eviction && { ...eviction, evictMs: summarize(eviction.evictMs) },
     engine: stats,
   };
 }

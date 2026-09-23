@@ -1,8 +1,8 @@
 # ADR-007: High-Throughput Offline Client Storage: IndexedDB vs OPFS SQLite WASM
 
-- **Status:** Proposed (spike #607 complete; quota/eviction measurement outstanding, see below)
+- **Status:** Proposed (spike #607 complete)
 - **Date:** 2026-09-23
-- **Evidence:** [Spike report](../spikes/607-storage-lock-contention-report.md) · [raw results](../spikes/results/storage-contention.json) · `scripts/spikes/storage_contention_benchmark.js`
+- **Evidence:** [Spike report](../spikes/607-storage-lock-contention-report.md) · raw results: [contention](../spikes/results/storage-contention.json), [quota and eviction](../spikes/results/storage-quota.json) · `scripts/spikes/storage_contention_benchmark.js`
 - **Prototype:** `src/services/storageEngine.js`, `src/workers/telemetryWorker.js`
 
 ## Context
@@ -33,20 +33,30 @@ Throughput ceilings (4 workers writing as fast as possible):
 
 No configuration dropped main-thread frames. Storage work stays off the UI thread in every option.
 
+Quota and eviction (origin quota forced to 40 MB, incompressible 2 KB records):
+
+| | Write until the quota error | Evict at 80 % down to 60 % |
+|---|---|---|
+| IndexedDB | Error at 19k records; **recovery by delete fails** (the delete also throws `QuotaExceededError`) | Still hit the quota once, because `estimate()` lags compaction, but stayed recoverable; each eviction took 136 ms |
+| SQLite owner (`opfs-sahpool`, WAL) | Error surfaces only as `SQLITE_IOERR`; **recovery by delete fails** | **Zero errors** over 60 s; usage flat at about 33 MB |
+
+`navigator.storage.persist()` was refused in every run.
+
 ## Decision
 
 1. **Keep IndexedDB as the storage engine for now, and put every high-frequency writer behind the group-commit `WriteAheadBuffer`.** At the target load of 500/s, native IndexedDB was not the bottleneck on this machine, even with one transaction per write. Batching cuts transactions 8×, doubles the throughput ceiling and needs no new dependency.
 2. **Do not open SQLite/OPFS from several workers or tabs.** An OPFS file allows one sync access handle at a time. Multiple connections spend their time fighting for it: 37–66 writes/s, reads stalled for up to 18 s, the VFS blocks worker event loops synchronously, and one run crashed the page. WAL is refused in this mode anyway, because it needs `locking_mode=EXCLUSIVE`.
 3. **If SQLite is adopted later** (for SQL queries, or throughput beyond about 3k/s), use exactly one **owner worker** per origin. It holds the only connection (`opfs-sahpool` VFS, `PRAGMA locking_mode=EXCLUSIVE; journal_mode=WAL`), and other workers and tabs forward writes to it over `MessagePort`. Owner election across tabs needs Web Locks or a SharedWorker. This topology gave the highest ceiling (4,721/s) with no lock waits. WAL and rollback journal differed little at 500/s (write p95 77 vs 90 ms).
 4. **Shed load when storage stalls.** Producers get a bounded backlog (`maxPending`) and drop the oldest telemetry fixes. Unbounded queues turned a slow disk into minutes of backlog in the direct-SQLite runs. Broadcast messages must not be shed: give them their own store with `overflow: "reject"`, and surface the error.
+5. **Evict before the quota, never after it.** A full origin cannot delete its way out, in either engine.
+   - Run a retention job that checks `navigator.storage.estimate()` and deletes the oldest telemetry once usage passes a soft watermark. For IndexedDB use about 70 %, since its estimate lags compaction.
+   - Use `deleteOldest`, which is a single key-range delete.
+   - Request `navigator.storage.persist()` on first incident join, and plan for it being refused.
+   - Treat `SQLITE_IOERR` at full quota as a quota error (`classifySqliteError()`); otherwise writers retry forever.
 
 ## Consequences
 
 - **Positive:** No new runtime dependency. The buffer is backend-agnostic, so moving to the SQLite owner later is a backend swap behind `createStorageEngine()`.
 - **Negative:** Group commit trades durability for throughput. A crash loses up to one flush window (50 ms) of buffered telemetry, which is acceptable for GPS fixes. Messages should use a zero-delay flush.
-- **Outstanding (not measured):**
-  - **Quota and eviction.** The quota run was invalid: its payload compressed. Chromium's IndexedDB compresses values, so 73k × 2 KB records took only 28.6 MB. The harness is fixed (random payload, owner topology) but was not re-run in this time box.
-  - A **CPU-starved device**. An uncontrolled early run under heavy background CPU load showed per-write IndexedDB falling to 264–287/s with write p95 above 10 s, while batching held about 490/s. `--cpu-stress` exists to measure this properly.
-
-  Until both are measured, the recommendation to batch is also the safe default for low-end phones.
-- **Follow-up:** `navigator.storage.persist()` on first incident join; a retention policy that deletes the oldest telemetry (tested: `deleteOldest` then write probes); and the two outstanding measurements above.
+- **Outstanding (not measured):** a controlled **CPU-starved device** run. An uncontrolled early run under heavy background CPU load showed per-write IndexedDB falling to 264–287/s with write p95 above 10 s, while batching held about 490/s. `--cpu-stress` exists to measure this properly. Until it is measured, batching is also the safe default for low-end phones.
+- **Follow-up:** wire the watermark retention job and the `persist()` request into the app, and run the outstanding CPU-starved measurement above.

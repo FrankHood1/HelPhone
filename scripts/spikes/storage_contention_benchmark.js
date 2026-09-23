@@ -10,7 +10,8 @@
  *               main-thread reader polling the newest 50 rows every 100 ms
  *   saturation  4 workers writing as fast as possible (throughput ceiling)
  *   quota       DevTools-overridden origin quota; one writer logs until
- *               QuotaExceeded, then deletes the oldest 10 % and probes writes
+ *               QuotaExceeded, then deletes the oldest 10 % and probes writes;
+ *               the evict-80 variants evict at a soft watermark instead
  *
  * Usage:
  *   node scripts/spikes/storage_contention_benchmark.js
@@ -22,7 +23,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
@@ -67,6 +68,9 @@ const SCENARIOS = [
   // ── quota exhaustion & recovery (quota forced to 40 MB) ──
   { name: "quota/idb/batched", quotaMB: 40, workers: 1, backend: "indexeddb", buffer: batched, saturate: true, durationMs: 120000, payloadBytes: 2048, recoverAfterQuota: true },
   { name: "quota/sqlite-sahpool/wal", quotaMB: 40, workers: 1, backend: "opfs-sqlite", topology: "owner", backendOptions: { vfs: "opfs-sahpool", ...wal }, buffer: batched, saturate: true, durationMs: 120000, payloadBytes: 2048, recoverAfterQuota: true },
+  // Soft watermark: evict the oldest 20 % once usage passes 80 % of quota.
+  { name: "quota/idb/batched/evict-80", quotaMB: 40, workers: 1, backend: "indexeddb", buffer: batched, saturate: true, durationMs: 60000, payloadBytes: 2048, recoverAfterQuota: true, evictAtRatio: 0.8 },
+  { name: "quota/sqlite-sahpool/wal/evict-80", quotaMB: 40, workers: 1, backend: "opfs-sqlite", topology: "owner", backendOptions: { vfs: "opfs-sahpool", ...wal }, buffer: batched, saturate: true, durationMs: 60000, payloadBytes: 2048, recoverAfterQuota: true, evictAtRatio: 0.8 },
 ];
 
 async function main() {
@@ -77,6 +81,8 @@ async function main() {
     server: {
       port: 5199,
       strictPort: false,
+      // node_modules may be a symlink (e.g. in a git worktree).
+      fs: { allow: [ROOT, realpathSync(resolve(ROOT, "node_modules"))] },
       headers: {
         "Cross-Origin-Opener-Policy": "same-origin",
         "Cross-Origin-Embedder-Policy": "require-corp",

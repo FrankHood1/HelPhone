@@ -119,6 +119,7 @@ window.runBench = async function runBench(scenario) {
     readerIntervalMs = 100,
     payloadBytes = 96,
     recoverAfterQuota = false,
+    evictAtRatio,
     maxPending,
   } = scenario;
   const dbName = backendOptions.dbName || "hp-bench";
@@ -209,6 +210,7 @@ window.runBench = async function runBench(scenario) {
           saturate,
           payloadBytes,
           recoverAfterQuota,
+          ...(evictAtRatio ? { evictAtRatio } : {}),
           ...(maxPending ? { maxPending } : {}),
         },
       });

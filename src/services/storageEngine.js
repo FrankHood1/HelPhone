@@ -173,10 +173,11 @@ export class WriteAheadBuffer {
 // ── IndexedDB backend ───────────────────────────────────────────────────────
 
 export class IndexedDbBackend {
-  constructor({ dbName = "helphone-offline", durability = "default", idb } = {}) {
+  constructor({ dbName = "helphone-offline", durability = "default", idb, keyRange } = {}) {
     this.dbName = dbName;
     this.durability = durability;
     this.idb = idb || (typeof indexedDB !== "undefined" ? indexedDB : null);
+    this.keyRange = keyRange || (typeof IDBKeyRange !== "undefined" ? IDBKeyRange : null);
     this.db = null;
     this.kind = "indexeddb";
   }
@@ -254,22 +255,43 @@ export class IndexedDbBackend {
     });
   }
 
-  /** Deletes the oldest `n` records — the recovery path after a quota error. */
+  /**
+   * Deletes the oldest `n` records (eviction / quota recovery). Finds the
+   * n-th oldest key, then drops the whole key range in one request: a
+   * per-row cursor delete took ~2 s per 3k rows in Chromium.
+   */
   deleteOldest(store, n) {
     return new Promise((resolve, reject) => {
       let deleted = 0;
       const tx = this.#tx(store, "readwrite");
-      const req = tx.objectStore(store).openCursor();
-      req.onsuccess = () => {
-        const cursor = req.result;
-        if (cursor && deleted < n) {
-          cursor.delete();
-          deleted++;
-          cursor.continue();
-        }
+      const os = tx.objectStore(store);
+      const counted = os.count();
+      counted.onsuccess = () => {
+        deleted = Math.min(n, counted.result);
+        if (!deleted) return;
+        const req = os.openKeyCursor();
+        let skipped = false;
+        let removed = 0;
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (!cursor) return;
+          if (!this.keyRange) {
+            // No IDBKeyRange available: per-row fallback.
+            os.delete(cursor.primaryKey);
+            if (++removed < deleted) cursor.continue();
+            return;
+          }
+          if (!skipped && deleted > 1) {
+            skipped = true;
+            cursor.advance(deleted - 1);
+            return;
+          }
+          os.delete(this.keyRange.upperBound(cursor.primaryKey));
+        };
       };
       tx.oncomplete = () => resolve(deleted);
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error("IndexedDB transaction aborted"));
     });
   }
 
@@ -389,7 +411,7 @@ export class SqliteOpfsBackend {
       } catch {
         // already rolled back
       }
-      throw err;
+      throw await classifySqliteError(err);
     }
     return { lockWaitMs, commitMs: now() - t0 };
   }
@@ -424,6 +446,21 @@ export class SqliteOpfsBackend {
       }
     }
   }
+}
+
+/**
+ * `opfs-sahpool` reports a full origin as a generic I/O error (the VFS logs
+ * "Unknown write() failure"), never SQLITE_FULL, so writers would retry
+ * forever. Treat an I/O error at (nearly) full quota as a quota error.
+ */
+export async function classifySqliteError(err, estimate = estimateStorage) {
+  if (isQuotaError(err) || !/SQLITE_IOERR|disk I\/O error/i.test(String(err && err.message))) return err;
+  const est = await estimate().catch(() => null);
+  if (!est || !est.quota || est.usage < est.quota * 0.98) return err;
+  const quotaErr = new Error(`Storage quota exhausted (${err.message})`);
+  quotaErr.name = "QuotaExceededError";
+  quotaErr.cause = err;
+  return quotaErr;
 }
 
 // ── In-memory backend (tests / fallback when no persistent storage) ─────────

@@ -1,15 +1,15 @@
 # Spike #607: Storage Lock Contention Analysis Report
 
-Feeds [ADR-007](../adr/ADR-007-offline-storage.md). Raw numbers: [`results/storage-contention.json`](results/storage-contention.json).
+Feeds [ADR-007](../adr/ADR-007-offline-storage.md). Raw numbers: [`results/storage-contention.json`](results/storage-contention.json) (contention, throughput) and [`results/storage-quota.json`](results/storage-quota.json) (quota and eviction).
 
 ## What was built
 
 | File | Purpose |
 |---|---|
-| `src/services/storageEngine.js` | `WriteAheadBuffer` (group commit, size- and time-triggered, single in-flight flush, overflow policy), `IndexedDbBackend` (durability hints, lock-wait timing, newest-first reads, `deleteOldest`), `SqliteOpfsBackend` (`opfs` / `opfs-wl` / `opfs-sahpool` VFS, WAL + `locking_mode=EXCLUSIVE`, `BEGIN IMMEDIATE` with SQLITE_BUSY backoff timing), `createStorageEngine()`, `estimateStorage()` |
-| `src/workers/telemetryWorker.js` | Synthetic GPS producer at a fixed rate with drift correction and backpressure (`maxPending`). Three roles: `writer` (own connection), `forward` (posts to an owner over `MessagePort`) and `owner` (holds the single SQLite connection). Also a quota-recovery probe. |
+| `src/services/storageEngine.js` | `WriteAheadBuffer` (group commit, size- and time-triggered, single in-flight flush, overflow policy), `IndexedDbBackend` (durability hints, lock-wait timing, newest-first reads, `deleteOldest`), `SqliteOpfsBackend` (`opfs` / `opfs-wl` / `opfs-sahpool` VFS, WAL + `locking_mode=EXCLUSIVE`, `BEGIN IMMEDIATE` with SQLITE_BUSY backoff timing), `createStorageEngine()`, `estimateStorage()`, `classifySqliteError()` (maps the sahpool VFS's generic I/O error at full quota to `QuotaExceededError`). `deleteOldest` is a single key-range delete in IndexedDB. |
+| `src/workers/telemetryWorker.js` | Synthetic GPS producer at a fixed rate with drift correction and backpressure (`maxPending`). Three roles: `writer` (own connection), `forward` (posts to an owner over `MessagePort`) and `owner` (holds the single SQLite connection). Also a quota-recovery probe and soft-watermark eviction (`evictAtRatio`), which forwarding writers run on the owner. |
 | `scripts/spikes/storage-bench/` + `storage_contention_benchmark.js` | Serves the repo through Vite with COOP/COEP headers and runs each scenario in a fresh Playwright Chromium context |
-| `test/storage-engine.test.js` | 21 tests covering buffer semantics, IndexedDB (fake-indexeddb), real SQLite WASM (in-memory under Node), backpressure, quota recovery and the owner/forward topology |
+| `test/storage-engine.test.js` | 24 tests covering buffer semantics, IndexedDB (fake-indexeddb), real SQLite WASM (in-memory under Node), backpressure, quota recovery, watermark eviction, SQLite quota-error classification and the owner/forward topology |
 
 ## Method
 
@@ -53,6 +53,38 @@ Notes:
 
 At saturation, batching lets reads queue behind very large write transactions (read p95 of 292 ms for IndexedDB). A production buffer should cap `maxBatch` (the default is 128) rather than flush everything queued.
 
+## Results: quota exhaustion and eviction
+
+The origin quota is forced to **40 MB** through DevTools (`Storage.overrideQuotaForOrigin`). One writer saturates the store with 2 KB records of random, incompressible padding. The main thread reads the newest 50 rows every 100 ms throughout. Two policies were tested:
+
+- **Hard limit:** write until the quota error, then try to recover by deleting the oldest 10 % and probing with 100 writes.
+- **evict-80:** a soft watermark. Every 1,000 records, check `navigator.storage.estimate()`. Once usage passes 80 %, delete the oldest records down to 60 %.
+
+| Scenario | Committed | Quota error | Recovery after the error | Evictions | Read p95 / max |
+|---|---|---|---|---|---|
+| IndexedDB, hard limit | 18,944 in 15 s | at record 19,456; usage reported 54 MB | **failed: the delete itself threw `QuotaExceededError`** | — | 262 / 302 ms |
+| SQLite `opfs-sahpool` owner (WAL), hard limit | 14,578 in 22 s | at record 15,078, as `SQLITE_IOERR` (see below); usage exactly 40 MB | **failed: the delete returned `SQLITE_IOERR`** (WAL frames need space) | — | 494 / 2,029 ms |
+| IndexedDB, evict-80 | 26,112 in 23 s | once, at record 26,624 | **succeeded:** 1,327 deleted, 100 of 100 probes written | 12 runs, 24,785 rows, **136 ms** each (p95 167 ms) | 316 / 454 ms |
+| SQLite `opfs-sahpool` owner (WAL), evict-80 | 25,000 in 60 s | **none** | not needed | 16 runs, 22,515 rows, p50 1.6 s, max 6.3 s | 1,378 / 6,270 ms |
+
+`navigator.storage.persist()` was **refused** (`false`) in every run, so this origin stays evictable under disk pressure. No run dropped frames or produced long tasks.
+
+What this shows:
+
+1. **At the hard limit, neither engine can dig itself out.** Deleting needs free space: LevelDB writes tombstones, and SQLite WAL writes frames. The hard-limit rows failed the same way in all three IndexedDB runs and both SQLite runs. A full origin stays stuck until the user clears site data. Eviction therefore has to happen **before** the quota is reached.
+2. **The watermark keeps both engines usable,** but the details differ:
+   - SQLite stayed at about 33 MB with zero errors, because freed pages are reused immediately.
+   - IndexedDB still hit the quota once. Its usage estimate reached 106 % of the quota between two checks, because deleted rows are not released until LevelDB compacts. It stayed **recoverable**, though, because the watermark had left headroom.
+
+   IndexedDB needs a lower watermark or an app-side byte counter.
+3. **SQLite's quota error is silent without classification.** `opfs-sahpool` logs `Unknown write() failure` and returns a generic `SQLITE_IOERR`, never `SQLITE_FULL`. Before `classifySqliteError()` was added, the writer never recognised the quota: an earlier run produced **123,405 failed writes** over 120 s. The classifier checks `estimate()` when an I/O error occurs and rethrows it as `QuotaExceededError` when usage is at 98 % of the quota or more.
+4. **Eviction cost.**
+   - In IndexedDB, a per-row cursor delete took 1.8–2.1 s per eviction of about 3,000 rows. The single key-range delete brought that down to **136 ms**.
+   - In SQLite, eviction runs on the one owner connection, so reads queue behind it. That produced the 6 s read maximum. Evict in smaller, more frequent chunks there.
+5. Chromium enforces the IndexedDB quota loosely: usage reached 54 MB against a 40 MB quota before the error. Treat `estimate()` as approximate.
+
+Reproduce: `CHROMIUM_PATH=/path/to/chrome node scripts/spikes/storage_contention_benchmark.js --only quota/ --out docs/spikes/results/storage-quota.json` (about 3 minutes).
+
 ## Findings
 
 1. **At the target of 500/s, IndexedDB's transaction locking was not the bottleneck** on this machine. Reads stayed under 3 ms at p95 even with 1,875 overlapping per-write transactions. The starvation described in the issue did not reproduce on an idle desktop-class CPU.
@@ -63,10 +95,6 @@ At saturation, batching lets reads queue behind very large write transactions (r
 
 ## Not measured (outstanding)
 
-- **Quota exhaustion and eviction.** The quota scenario overrides the origin quota to 40 MB through DevTools and logs 2 KB records until `QuotaExceededError`, then deletes the oldest 10 % and probes that writes resume.
-  - This run was **invalid.** Its padding was a repeated character, and Chromium's IndexedDB compresses values (Snappy): 73,216 records × 2 KB used only 28.6 MB (391 B/record) and never hit the quota.
-  - The SQLite variant failed because of a harness topology error: a separate reader connection conflicted with `opfs-sahpool`'s exclusivity.
-  - Both are fixed (random padding; owner topology) but were not re-run within the time box: `node scripts/spikes/storage_contention_benchmark.js --only quota/`.
-  - Eviction under disk pressure cannot be triggered from a page. It follows the browser's best-effort LRU policy unless `navigator.storage.persist()` is granted; `persisted` was `false` in headless Chromium.
+- Eviction by the browser itself under real disk pressure. A page cannot trigger it, and Chromium applies its best-effort LRU policy to whole origins unless `persist()` is granted. It was refused here.
 - Real low-end Android devices.
 - Contention across several tabs. This spike used several workers in one tab; each tab would add its own connections.

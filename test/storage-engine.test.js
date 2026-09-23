@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { IDBFactory } from "fake-indexeddb";
+import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
 import {
   IndexedDbBackend,
@@ -8,6 +8,7 @@ import {
   SqliteOpfsBackend,
   WriteAheadBuffer,
   createStorageEngine,
+  classifySqliteError,
   estimateStorage,
   isQuotaError,
   summarize,
@@ -143,7 +144,7 @@ describe("IndexedDbBackend (fake-indexeddb)", () => {
   it("writes batches atomically and reads newest-first", async () => {
     const idb = new IDBFactory();
     const engine = await createStorageEngine({
-      backend: new IndexedDbBackend({ idb, dbName: "t1", durability: "relaxed" }),
+      backend: new IndexedDbBackend({ idb, keyRange: IDBKeyRange, dbName: "t1", durability: "relaxed" }),
       buffer: { flushMs: 1 },
     });
     await Promise.all(Array.from({ length: 30 }, (_, i) => engine.append("telemetry", { ts: i, lat: 1, lng: 2 })));
@@ -151,6 +152,12 @@ describe("IndexedDbBackend (fake-indexeddb)", () => {
     expect((await engine.readLatest("telemetry", 2)).map((r) => r.ts)).toEqual([29, 28]);
     expect(await engine.deleteOldest("telemetry", 10)).toBe(10);
     expect(await engine.count("telemetry")).toBe(20);
+    // the oldest were removed, the newest kept
+    expect((await engine.readLatest("telemetry", 30)).map((r) => r.ts).sort((a, b) => a - b)[0]).toBe(10);
+    expect(await engine.deleteOldest("telemetry", 1)).toBe(1);
+    expect(await engine.deleteOldest("telemetry", 100)).toBe(19);
+    expect(await engine.count("telemetry")).toBe(0);
+    expect(await engine.deleteOldest("telemetry", 5)).toBe(0);
     const stats = engine.stats();
     expect(stats.transactions).toBe(1);
     expect(stats.txnLockWaitMs.n).toBe(1);
@@ -262,6 +269,31 @@ describe("telemetry worker helpers", () => {
     writers.forEach(({ ports }) => ports.forEach((p) => p.close()));
   });
 
+  it("evicts the oldest records at a soft watermark before the quota is hit", async () => {
+    const backend = new MemoryBackend();
+    const quota = 2000;
+    const original = globalThis.navigator;
+    // usage = 1 unit per stored row, quota = 2,000 rows
+    Object.defineProperty(globalThis, "navigator", {
+      value: { storage: { estimate: async () => ({ quota, usage: await backend.count("telemetry") }) } },
+      configurable: true,
+    });
+    try {
+      const engine = await createStorageEngine({ backend, buffer: { flushMs: 1, maxBatch: 64 } });
+      const result = await runWriter(
+        { saturate: true, durationMs: 1500, inflight: 32, evictAtRatio: 0.8, evictCheckEvery: 100 },
+        engine,
+      );
+      expect(result.quotaError).toBeNull();
+      expect(result.eviction.runs).toBeGreaterThan(0);
+      expect(result.committed).toBeGreaterThan(quota); // would have overrun without eviction
+      // watermark (1,600) + one check interval (100) + in-flight window (32)
+      expect(await backend.count("telemetry")).toBeLessThanOrEqual(quota);
+    } finally {
+      Object.defineProperty(globalThis, "navigator", { value: original, configurable: true });
+    }
+  });
+
   it("runs quota recovery on the owner for forwarding writers", async () => {
     const backend = new MemoryBackend();
     const owner = await createStorageEngine({ backend, buffer: { flushMs: 1 } });
@@ -282,6 +314,19 @@ describe("helpers", () => {
     expect(isQuotaError(new Error("SQLITE_FULL: database or disk is full"))).toBe(true);
     expect(isQuotaError(new Error("constraint failed"))).toBe(false);
     expect(isQuotaError(null)).toBe(false);
+  });
+
+  it("reclassifies SQLite I/O errors as quota errors only when the origin is full", async () => {
+    const ioErr = new Error("SQLITE_IOERR_WRITE: sqlite3 result code 778: disk I/O error");
+    const full = async () => ({ quota: 100, usage: 99 });
+    const roomy = async () => ({ quota: 100, usage: 50 });
+    const reclassified = await classifySqliteError(ioErr, full);
+    expect(reclassified.name).toBe("QuotaExceededError");
+    expect(isQuotaError(reclassified)).toBe(true);
+    expect(reclassified.cause).toBe(ioErr);
+    expect(await classifySqliteError(ioErr, roomy)).toBe(ioErr);
+    const other = new Error("constraint failed");
+    expect(await classifySqliteError(other, full)).toBe(other);
   });
 
   it("summarises latency samples", () => {

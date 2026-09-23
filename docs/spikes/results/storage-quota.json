@@ -1,0 +1,688 @@
+{
+  "spike": "#607",
+  "generatedAt": "2026-09-23T18:31:00.347Z",
+  "environment": {
+    "browser": "chromium 147.0.7727.15",
+    "cpu": "Intel(R) Core(TM) i5-4300U CPU @ 1.90GHz",
+    "cores": 4,
+    "totalMemGB": 11.6,
+    "platform": "linux 7.0.0-31-generic"
+  },
+  "params": {
+    "durationMs": 15000,
+    "saturateMs": 6000,
+    "cpuStressProcesses": 0
+  },
+  "scenarios": [
+    {
+      "name": "quota/idb/batched",
+      "config": {
+        "workers": 1,
+        "rateHz": 125,
+        "durationMs": 120000,
+        "backend": "indexeddb",
+        "backendOptions": {},
+        "buffer": {
+          "maxBatch": 128,
+          "flushMs": 50
+        },
+        "topology": "direct",
+        "saturate": true,
+        "payloadBytes": 2048,
+        "maxPending": null
+      },
+      "wallMs": 14934,
+      "totalCommitted": 18944,
+      "totalErrors": 512,
+      "totalUnfinished": 0,
+      "totalShed": 0,
+      "throughputPerSec": 1269,
+      "writers": [
+        {
+          "type": "result",
+          "role": "writer",
+          "worker": 0,
+          "produced": 19456,
+          "committed": 18944,
+          "shed": 0,
+          "unfinished": 0,
+          "errors": 512,
+          "quotaError": {
+            "name": "QuotaExceededError",
+            "message": "QuotaExceededError",
+            "atRecord": 19456,
+            "atMs": 14733.134999997914
+          },
+          "elapsedMs": 14734,
+          "achievedPerSec": 1286,
+          "writeLatencyMs": {
+            "n": 18944,
+            "mean": 294.4,
+            "p50": 294.27,
+            "p95": 460.04,
+            "p99": 542.54,
+            "max": 592.39
+          },
+          "recovery": {
+            "error": "QuotaExceededError"
+          },
+          "eviction": null,
+          "engine": {
+            "backend": "indexeddb",
+            "journalMode": null,
+            "busyRetries": 0,
+            "transactions": 37,
+            "txnLockWaitMs": {
+              "n": 37,
+              "mean": 18.41,
+              "p50": 18.03,
+              "p95": 32.29,
+              "p99": 34.66,
+              "max": 34.66
+            },
+            "txnCommitMs": {
+              "n": 37,
+              "mean": 217.09,
+              "p50": 218.59,
+              "p95": 350.96,
+              "p99": 361.94,
+              "max": 361.94
+            },
+            "buffer": {
+              "enqueued": 19556,
+              "committed": 18944,
+              "dropped": 0,
+              "failed": 612,
+              "batches": 37,
+              "avgBatch": 512,
+              "queueWaitMs": {
+                "n": 18944,
+                "mean": 77.23,
+                "p50": 73.56,
+                "p95": 162.3,
+                "p99": 203.71,
+                "max": 241.37
+              },
+              "commitMs": {
+                "n": 37,
+                "mean": 217.17,
+                "p50": 218.65,
+                "p95": 351.03,
+                "p99": 361.99,
+                "max": 361.99
+              }
+            },
+            "direct": null
+          }
+        }
+      ],
+      "owner": null,
+      "reader": {
+        "reads": 121,
+        "errors": 0,
+        "readLatencyMs": {
+          "n": 121,
+          "mean": 52.77,
+          "p50": 1.82,
+          "p95": 262.27,
+          "p99": 291.21,
+          "max": 302.09
+        }
+      },
+      "frames": {
+        "frames": 897,
+        "frameGapMs": {
+          "n": 897,
+          "mean": 16.65,
+          "p50": 16.66,
+          "p95": 16.67,
+          "p99": 16.67,
+          "max": 16.67
+        },
+        "framesOver50ms": 0,
+        "longTasks": 0,
+        "longestTaskMs": 0
+      },
+      "storage": {
+        "before": {
+          "quota": 41943040,
+          "usage": 0,
+          "usageDetails": {},
+          "persisted": false
+        },
+        "after": {
+          "quota": 41943040,
+          "usage": 53997526,
+          "usageDetails": {
+            "indexedDB": 53997526
+          },
+          "persisted": false
+        },
+        "usageDeltaBytes": 53997526,
+        "bytesPerRecord": 2850,
+        "persistGranted": false
+      },
+      "crossOriginIsolated": true,
+      "quotaMB": 40
+    },
+    {
+      "name": "quota/sqlite-sahpool/wal",
+      "config": {
+        "workers": 1,
+        "rateHz": 125,
+        "durationMs": 120000,
+        "backend": "opfs-sqlite",
+        "backendOptions": {
+          "vfs": "opfs-sahpool",
+          "journalMode": "wal",
+          "exclusive": true
+        },
+        "buffer": {
+          "maxBatch": 128,
+          "flushMs": 50
+        },
+        "topology": "owner",
+        "saturate": true,
+        "payloadBytes": 2048,
+        "maxPending": null
+      },
+      "wallMs": 22374,
+      "totalCommitted": 14578,
+      "totalErrors": 500,
+      "totalUnfinished": 0,
+      "totalShed": 0,
+      "throughputPerSec": 652,
+      "writers": [
+        {
+          "type": "result",
+          "role": "forward",
+          "worker": 0,
+          "produced": 15078,
+          "committed": 14578,
+          "shed": 0,
+          "unfinished": 0,
+          "errors": 500,
+          "quotaError": {
+            "name": "QuotaExceededError",
+            "message": "Storage quota exhausted (SQLITE_IOERR: sqlite3 result code 10: disk I/O error)",
+            "atRecord": 15078,
+            "atMs": 21279.240000002086
+          },
+          "elapsedMs": 21943,
+          "achievedPerSec": 664,
+          "writeLatencyMs": {
+            "n": 14578,
+            "mean": 729.14,
+            "p50": 504.75,
+            "p95": 2005.61,
+            "p99": 2547.54,
+            "max": 2596.62
+          },
+          "recovery": {
+            "error": "SQLITE_IOERR: sqlite3 result code 10: disk I/O error"
+          },
+          "eviction": null,
+          "engine": {
+            "backend": "forward",
+            "forwarded": 15079
+          }
+        }
+      ],
+      "owner": {
+        "type": "result",
+        "role": "owner",
+        "engine": {
+          "backend": "sqlite-opfs-sahpool",
+          "journalMode": "wal",
+          "busyRetries": 0,
+          "transactions": 57,
+          "txnLockWaitMs": {
+            "n": 57,
+            "mean": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "txnCommitMs": {
+            "n": 57,
+            "mean": 365.65,
+            "p50": 233.54,
+            "p95": 1584.75,
+            "p99": 2120.12,
+            "max": 2120.12
+          },
+          "buffer": {
+            "enqueued": 15078,
+            "committed": 14578,
+            "dropped": 0,
+            "failed": 500,
+            "batches": 57,
+            "avgBatch": 255.8,
+            "queueWaitMs": {
+              "n": 14578,
+              "mean": 5.84,
+              "p50": 5.14,
+              "p95": 12.85,
+              "p99": 16.96,
+              "max": 50.93
+            },
+            "commitMs": {
+              "n": 57,
+              "mean": 365.7,
+              "p50": 233.6,
+              "p95": 1584.8,
+              "p99": 2120.17,
+              "max": 2120.17
+            }
+          },
+          "direct": null
+        },
+        "counts": {
+          "telemetry": 14578
+        },
+        "storage": {
+          "quota": 41943040,
+          "usage": 41943040,
+          "usageDetails": {
+            "fileSystem": 41943040
+          },
+          "persisted": false
+        }
+      },
+      "reader": {
+        "reads": 114,
+        "errors": 0,
+        "readLatencyMs": {
+          "n": 114,
+          "mean": 151.64,
+          "p50": 72.64,
+          "p95": 493.84,
+          "p99": 1669.4,
+          "max": 2029.07
+        }
+      },
+      "frames": {
+        "frames": 1350,
+        "frameGapMs": {
+          "n": 1350,
+          "mean": 16.64,
+          "p50": 16.67,
+          "p95": 16.67,
+          "p99": 16.67,
+          "max": 16.67
+        },
+        "framesOver50ms": 0,
+        "longTasks": 0,
+        "longestTaskMs": 0
+      },
+      "storage": {
+        "before": {
+          "quota": 41943040,
+          "usage": 0,
+          "usageDetails": {},
+          "persisted": false
+        },
+        "after": {
+          "quota": 41943040,
+          "usage": 41943040,
+          "usageDetails": {
+            "fileSystem": 41943040
+          },
+          "persisted": false
+        },
+        "usageDeltaBytes": 41943040,
+        "bytesPerRecord": 2877,
+        "persistGranted": false
+      },
+      "crossOriginIsolated": true,
+      "quotaMB": 40
+    },
+    {
+      "name": "quota/idb/batched/evict-80",
+      "config": {
+        "workers": 1,
+        "rateHz": 125,
+        "durationMs": 60000,
+        "backend": "indexeddb",
+        "backendOptions": {},
+        "buffer": {
+          "maxBatch": 128,
+          "flushMs": 50
+        },
+        "topology": "direct",
+        "saturate": true,
+        "payloadBytes": 2048,
+        "maxPending": null
+      },
+      "wallMs": 22740,
+      "totalCommitted": 26112,
+      "totalErrors": 512,
+      "totalUnfinished": 0,
+      "totalShed": 0,
+      "throughputPerSec": 1148,
+      "writers": [
+        {
+          "type": "result",
+          "role": "writer",
+          "worker": 0,
+          "produced": 26624,
+          "committed": 26112,
+          "shed": 0,
+          "unfinished": 0,
+          "errors": 512,
+          "quotaError": {
+            "name": "QuotaExceededError",
+            "message": "QuotaExceededError",
+            "atRecord": 26624,
+            "atMs": 22248.25
+          },
+          "elapsedMs": 22368,
+          "achievedPerSec": 1167,
+          "writeLatencyMs": {
+            "n": 26112,
+            "mean": 316.07,
+            "p50": 298.68,
+            "p95": 550.07,
+            "p99": 651,
+            "max": 748.48
+          },
+          "recovery": {
+            "deleted": 1327,
+            "probeWrites": 100,
+            "probeFailures": 0,
+            "error": null
+          },
+          "eviction": {
+            "checks": 26,
+            "runs": 12,
+            "deleted": 24785,
+            "maxUsageRatio": 1.059,
+            "evictMs": {
+              "n": 12,
+              "mean": 136.02,
+              "p50": 142.04,
+              "p95": 167.12,
+              "p99": 167.12,
+              "max": 167.12
+            }
+          },
+          "engine": {
+            "backend": "indexeddb",
+            "journalMode": null,
+            "busyRetries": 0,
+            "transactions": 52,
+            "txnLockWaitMs": {
+              "n": 52,
+              "mean": 15.29,
+              "p50": 14.69,
+              "p95": 22.59,
+              "p99": 32.29,
+              "max": 32.29
+            },
+            "txnCommitMs": {
+              "n": 52,
+              "mean": 245.68,
+              "p50": 232.78,
+              "p95": 489.39,
+              "p99": 541.5,
+              "max": 541.5
+            },
+            "buffer": {
+              "enqueued": 26724,
+              "committed": 26212,
+              "dropped": 0,
+              "failed": 512,
+              "batches": 52,
+              "avgBatch": 504.1,
+              "queueWaitMs": {
+                "n": 26212,
+                "mean": 67.65,
+                "p50": 65.27,
+                "p95": 137.36,
+                "p99": 171.77,
+                "max": 206.92
+              },
+              "commitMs": {
+                "n": 52,
+                "mean": 245.75,
+                "p50": 232.81,
+                "p95": 489.42,
+                "p99": 541.56,
+                "max": 541.56
+              }
+            },
+            "direct": null
+          }
+        }
+      ],
+      "owner": null,
+      "reader": {
+        "reads": 175,
+        "errors": 0,
+        "readLatencyMs": {
+          "n": 175,
+          "mean": 62.17,
+          "p50": 2.16,
+          "p95": 316.18,
+          "p99": 413.65,
+          "max": 453.53
+        }
+      },
+      "frames": {
+        "frames": 1364,
+        "frameGapMs": {
+          "n": 1364,
+          "mean": 16.66,
+          "p50": 16.67,
+          "p95": 16.67,
+          "p99": 16.67,
+          "max": 16.67
+        },
+        "framesOver50ms": 0,
+        "longTasks": 0,
+        "longestTaskMs": 0
+      },
+      "storage": {
+        "before": {
+          "quota": 41943040,
+          "usage": 0,
+          "usageDetails": {},
+          "persisted": false
+        },
+        "after": {
+          "quota": 41943040,
+          "usage": 33720740,
+          "usageDetails": {
+            "indexedDB": 33720740
+          },
+          "persisted": false
+        },
+        "usageDeltaBytes": 33720740,
+        "bytesPerRecord": 1291,
+        "persistGranted": false
+      },
+      "crossOriginIsolated": true,
+      "quotaMB": 40
+    },
+    {
+      "name": "quota/sqlite-sahpool/wal/evict-80",
+      "config": {
+        "workers": 1,
+        "rateHz": 125,
+        "durationMs": 60000,
+        "backend": "opfs-sqlite",
+        "backendOptions": {
+          "vfs": "opfs-sahpool",
+          "journalMode": "wal",
+          "exclusive": true
+        },
+        "buffer": {
+          "maxBatch": 128,
+          "flushMs": 50
+        },
+        "topology": "owner",
+        "saturate": true,
+        "payloadBytes": 2048,
+        "maxPending": null
+      },
+      "wallMs": 64417,
+      "totalCommitted": 25000,
+      "totalErrors": 0,
+      "totalUnfinished": 0,
+      "totalShed": 0,
+      "throughputPerSec": 388,
+      "writers": [
+        {
+          "type": "result",
+          "role": "forward",
+          "worker": 0,
+          "produced": 25000,
+          "committed": 25000,
+          "shed": 0,
+          "unfinished": 0,
+          "errors": 0,
+          "quotaError": null,
+          "elapsedMs": 64368,
+          "achievedPerSec": 388,
+          "writeLatencyMs": {
+            "n": 25000,
+            "mean": 641.32,
+            "p50": 440.32,
+            "p95": 1902,
+            "p99": 2365.7,
+            "max": 2586.18
+          },
+          "recovery": null,
+          "eviction": {
+            "checks": 25,
+            "runs": 16,
+            "deleted": 22515,
+            "maxUsageRatio": 0.875,
+            "evictMs": {
+              "n": 16,
+              "mean": 2104.57,
+              "p50": 1604.91,
+              "p95": 6311.99,
+              "p99": 6311.99,
+              "max": 6311.99
+            }
+          },
+          "engine": {
+            "backend": "forward",
+            "forwarded": 25016
+          }
+        }
+      ],
+      "owner": {
+        "type": "result",
+        "role": "owner",
+        "engine": {
+          "backend": "sqlite-opfs-sahpool",
+          "journalMode": "wal",
+          "busyRetries": 0,
+          "transactions": 116,
+          "txnLockWaitMs": {
+            "n": 116,
+            "mean": 0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "txnCommitMs": {
+            "n": 116,
+            "mean": 298.59,
+            "p50": 190.29,
+            "p95": 979.04,
+            "p99": 1674.54,
+            "max": 2095.36
+          },
+          "buffer": {
+            "enqueued": 25000,
+            "committed": 25000,
+            "dropped": 0,
+            "failed": 0,
+            "batches": 116,
+            "avgBatch": 215.5,
+            "queueWaitMs": {
+              "n": 25000,
+              "mean": 7.98,
+              "p50": 4.41,
+              "p95": 30.31,
+              "p99": 47.56,
+              "max": 66.78
+            },
+            "commitMs": {
+              "n": 116,
+              "mean": 298.64,
+              "p50": 190.34,
+              "p95": 979.09,
+              "p99": 1674.59,
+              "max": 2095.39
+            }
+          },
+          "direct": null
+        },
+        "counts": {
+          "telemetry": 2485
+        },
+        "storage": {
+          "quota": 41943040,
+          "usage": 27411780,
+          "usageDetails": {
+            "fileSystem": 27411780
+          },
+          "persisted": false
+        }
+      },
+      "reader": {
+        "reads": 193,
+        "errors": 0,
+        "readLatencyMs": {
+          "n": 193,
+          "mean": 290.24,
+          "p50": 62,
+          "p95": 1378.39,
+          "p99": 6168.66,
+          "max": 6269.97
+        }
+      },
+      "frames": {
+        "frames": 3871,
+        "frameGapMs": {
+          "n": 3871,
+          "mean": 16.66,
+          "p50": 16.67,
+          "p95": 16.67,
+          "p99": 16.67,
+          "max": 33.33
+        },
+        "framesOver50ms": 0,
+        "longTasks": 0,
+        "longestTaskMs": 0
+      },
+      "storage": {
+        "before": {
+          "quota": 41943040,
+          "usage": 0,
+          "usageDetails": {},
+          "persisted": false
+        },
+        "after": {
+          "quota": 41943040,
+          "usage": 27411780,
+          "usageDetails": {
+            "fileSystem": 27411780
+          },
+          "persisted": false
+        },
+        "usageDeltaBytes": 27411780,
+        "bytesPerRecord": 1096,
+        "persistGranted": false
+      },
+      "crossOriginIsolated": true,
+      "quotaMB": 40
+    }
+  ]
+}

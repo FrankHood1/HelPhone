@@ -40,7 +40,9 @@
     "spike:zk:build": "bash circuits/recursive_verifier/build.sh 1 && bash circuits/recursive_verifier/build.sh 2 && bash circuits/recursive_verifier/build.sh 5",
     "spike:zk": "node scripts/spikes/zk_aggregation_benchmark.js --out docs/spikes/results/zk-aggregation.json",
     "spike:routing": "node --expose-gc --max-old-space-size=3072 scripts/spikes/routing_benchmark.js --out docs/spikes/results/routing-benchmark.json",
-    "spike:storage": "node scripts/spikes/storage_contention_benchmark.js --out docs/spikes/results/storage-contention.json"
+    "spike:storage": "node scripts/spikes/storage_contention_benchmark.js --out docs/spikes/results/storage-contention.json",
+    "spike:storage:quota": "node scripts/spikes/storage_contention_benchmark.js --only quota/ --out docs/spikes/results/storage-quota.json",
+    "spike:zk:gas": "node scripts/spikes/zk_verifier_gas.js --out docs/spikes/results/zk-verifier-gas.json"
   },
   "lint-staged": {
     "*.{js,jsx}": [

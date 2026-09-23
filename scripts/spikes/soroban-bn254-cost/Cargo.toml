@@ -1,0 +1,18 @@
+# Spike #605: metered Soroban CPU cost of the BN254 host functions an
+# UltraHonk verifier would use. Standalone (not in the contract workspace).
+#
+#   cd scripts/spikes/soroban-bn254-cost && cargo test --release
+#   -> ../../../docs/spikes/results/soroban-bn254-cost.json
+[package]
+name = "soroban_bn254_cost"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+soroban-sdk = { version = "=27.0.6", features = ["testutils"] }

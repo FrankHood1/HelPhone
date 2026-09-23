@@ -1,0 +1,19 @@
+{
+  "spike": "#605",
+  "sdk": "soroban-sdk 27.0.6 (testutils budget)",
+  "unit": "metered CPU instructions",
+  "txInstructionLimit": 100000000,
+  "perOp": {
+    "fr_mul": 7686,
+    "fr_add": 7428,
+    "fr_inv": 39017,
+    "g1_add": 10715,
+    "g1_mul": 1160037,
+    "g1_msm_1": 1524215,
+    "g1_msm_64": 22629194,
+    "g1_msm_per_point": 334999,
+    "pairing_check_2": 14833973,
+    "keccak_base": 5883,
+    "keccak_per_byte": 46.88
+  }
+}

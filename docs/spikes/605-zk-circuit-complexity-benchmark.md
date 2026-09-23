@@ -35,7 +35,7 @@ Measured on an i5-4300U (2 cores / 4 threads, 2014), bb.js 0.87.9 WASM, Node 22.
 | outer N=2 | 4 | — | 4,026 MB | ✘ `unreachable` trap: out of memory at the 4 GiB WASM32 limit |
 | outer N=5 | 4 | — | — | not completed (stopped); 2^22 is 2× the N=2 circuit, which already ran out of memory |
 
-The benchmark script also covers a single-threaded N=1 run, N=1 under the iOS 1 GiB cap, and the keccak/EVM flavour with the Solidity verifier. **These were not run in this time box.** The run was stopped after the N=5 job started, and the JSON was transcribed from its log. N=1 already uses 2.6 GB, so it cannot fit under a 1 GiB cap. An earlier run of the same N=1 job measured 93.1 s and 2,625 MB, which is consistent.
+The benchmark script also covers a single-threaded N=1 run and N=1 under the iOS 1 GiB cap. **These two were not run in this time box.** The keccak/EVM flavour was measured separately by `zk_verifier_gas.js`: N=1 proving took 92.4 s (see On-chain verification cost). The run was stopped after the N=5 job started, and the JSON was transcribed from its log. N=1 already uses 2.6 GB, so it cannot fit under a 1 GiB cap. An earlier run of the same N=1 job measured 93.1 s and 2,625 MB, which is consistent.
 
 ### Extrapolation to devices (assumptions, not measurements)
 
@@ -58,24 +58,81 @@ The benchmark script also covers a single-threaded N=1 run, N=1 under the iOS 1 
 
 The 500 ms target is met **without** aggregation, as long as verifiers ship precomputed VKs. Aggregation would bring 5 verifications (214 ms) down to one (about 40 ms), but only at the proving costs above.
 
-## On-chain verification cost: model, not measured
+## On-chain verification cost
 
-Neither chain could be measured in this spike:
+Raw numbers: [`results/zk-verifier-gas.json`](results/zk-verifier-gas.json) and [`results/soroban-bn254-cost.json`](results/soroban-bn254-cost.json).
 
-- The Soroban `noir_verifier` contract (`ultrahonk_rust_verifier`) is deployed from outside this repository.
-- No EVM toolchain (solc, anvil or foundry) was available.
-- Native `bb` 0.87 crashes on this CPU with an illegal instruction.
+### EVM: measured
 
-What *is* measured is that an aggregated proof is **the same size as one inner proof** (14,592 bytes, 456 fields). Public inputs are 2N+4 fields instead of 5 per proof. Verifier work in UltraHonk is dominated by one pairing check plus commitment MSMs of fixed size, independent of the circuit verified. So:
+`scripts/spikes/zk_verifier_gas.js` does four things:
 
-- **Verifying 1 aggregated proof costs about the same as verifying 1 inner proof.** Submitting 5 proofs separately costs about 5×. The saving is about (N−1)/N, which is 80 % for N=5, minus a small increase in public-input calldata.
-- **EVM (for sizing only, from EIP-196/197/2028 prices):**
-  - Calldata for 14.6 KB costs up to about 235k gas at 16 gas per non-zero byte.
-  - The pairing precompile with 2 pairs costs 113k gas.
-  - MSM ecMul costs 6,000 gas per point.
+1. Makes keccak-flavour proofs for the inner circuit and for the N=1 aggregator.
+2. Compiles bb's generated `HonkVerifier.sol` with solc 0.8.30 (optimizer, runs = 1).
+3. Deploys each verifier on an in-process EVM (`@ethereumjs/evm`, Prague rules).
+4. Calls `verify(proof, publicInputs)`.
 
-  The sumcheck arithmetic on top of these is **not** estimated. Measure it with bb.js `UltraHonkBackend.getSolidityVerifier()` and `forge test --gas-report`.
-- **Soroban:** measure with `soroban-sdk`'s `env.cost_estimate().budget()` in a unit test that registers `noir_verifier` with the outer VK. Compare it against the per-transaction instruction limit.
+Every Ethereum testnet uses the same gas schedule, so this is the testnet figure. Each verifier also rejects the same proof after one public input is flipped.
+
+| Proof | log n | Proof bytes | Execution gas | **Transaction gas** | Runtime bytecode |
+|---|---|---|---|---|---|
+| Inner `responder_credential` | 12 | 14,592 | 1,751,852 | **1,908,012** | 21,135 B |
+| Aggregate, N=1 | 20 | 14,592 | 1,992,215 | **2,182,403** | 21,136 B |
+| Aggregate, N=5 (extrapolated, +2 rounds) | 22 | 14,592 | — | **≈ 2,251,000** | — |
+| 5 inner proofs submitted separately | — | 5 × 14,592 | — | **9,540,060** | — |
+
+Both verifiers fit under the EIP-170 24 KB contract limit. bb 0.87 pads proofs to a fixed size, so proof bytes and calldata do not change with the circuit. Only the sumcheck and folding rounds grow, by about **34k gas per doubling** of the circuit.
+
+**Aggregating 5 proofs cuts on-chain verification from about 9.5M to about 2.25M gas (4.2×).** Verifying the N=5 aggregate needs just 2 more rounds than N=1. Its gas is extrapolated because the N=5 proof cannot be produced in WASM (see above).
+
+The trace shows where the gas goes. Per verification, the calls are the same for both proofs:
+
+- 70 `ecMul` and 69 `ecAdd` precompile calls, together about 430k gas.
+- One 2-pair pairing check, 113k gas.
+- 76 keccak calls over about 17 KB.
+
+The rest is field arithmetic, which is what grows with log n:
+
+| Operation | Inner (log n 12) | Aggregate (log n 20) |
+|---|---|---|
+| MULMOD | 991 | 1,265 |
+| ADDMOD | 860 | 1,120 |
+| modexp inversions | 150 | 230 |
+
+### Soroban: estimated from measured primitives
+
+No UltraHonk verifier for Soroban's BN254 host functions exists in this repository. The `noir_verifier` contract referenced in `CLAUDE.md` is not checked in. Instead, `scripts/spikes/soroban-bn254-cost` measures the metered CPU-instruction cost of each primitive with the soroban-sdk 27 test budget:
+
+| Primitive | Instructions |
+|---|---|
+| `fr_mul` | 7,686 |
+| `fr_add` | 7,428 |
+| `fr_inv` | 39,017 |
+| `g1_mul` | 1,160,037 |
+| `g1_msm`, per point (64-point MSM) | 334,999 |
+| `pairing_check`, 2 pairs | 14,833,973 |
+| keccak256 | 5,883 + 46.9 per byte |
+
+Pricing the EVM trace's operation counts with these costs gives these **host-function costs**:
+
+| Proof | Soroban host instructions | Share of the 100M per-transaction limit |
+|---|---|---|
+| Inner (log n 12) | 59.4M | 59 % |
+| Aggregate, N=1 (log n 20) | 66.6M | 67 % |
+
+The two biggest parts are the commitment MSM (23.4M, with 70 points priced as one MSM) and the pairing (14.8M).
+
+**This is a lower bound.** Guest WASM for control flow, proof parsing and value conversions comes on top, and it could plausibly add tens of millions of instructions. A verifier that folds the field arithmetic into guest code instead of host calls will cost differently. So a single aggregated proof *may* fit in one Soroban transaction, and five separate proofs certainly need five. Confirm by porting a verifier to the SDK 27 BN254 API and reading `env.cost_estimate()`.
+
+Reproduce:
+
+```bash
+(cd scripts/spikes/soroban-bn254-cost && cargo test --release)   # writes the Soroban cost JSON
+npm i --prefix /tmp/evm-deps solc@0.8.30 @ethereumjs/evm@10 @ethereumjs/common@10 @ethereumjs/util@10
+EVM_DEPS_DIR=/tmp/evm-deps/node_modules systemd-run --user --scope -p MemoryMax=3200M \
+  node scripts/spikes/zk_verifier_gas.js --out docs/spikes/results/zk-verifier-gas.json
+```
+
+The memory cap matters on a shared machine. The N=1 proof peaks at 2.6 GB, and an uncapped run pushed this laptop into the kernel OOM killer.
 
 ## Toolchain findings
 

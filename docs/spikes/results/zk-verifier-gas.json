@@ -1,0 +1,95 @@
+{
+  "spike": "#605",
+  "generatedAt": "2026-09-23T18:42:29.254Z",
+  "hardfork": "prague",
+  "circuits": {
+    "responder_credential": {
+      "logN": 12,
+      "proofBytes": 14592,
+      "publicInputs": 5,
+      "keccakProvingMs": 1424,
+      "solc": "0.8.30+commit.73712a01.Emscripten.clang",
+      "evm": {
+        "verified": true,
+        "rejectsTampered": true,
+        "calldataBytes": 14884,
+        "executionGas": 1751852,
+        "txGas": 1908012,
+        "runtimeBytecodeBytes": 21135,
+        "exceedsEip170": false,
+        "ops": {
+          "MULMOD": 991,
+          "ADDMOD": 860,
+          "keccakCalls": 76,
+          "keccakBytes": 17120,
+          "ecAdd": 69,
+          "ecMul": 70,
+          "pairing": 1,
+          "pairingPairs": 2,
+          "modexp": 150
+        }
+      },
+      "sorobanEstimate": {
+        "hostInstructions": 59391053,
+        "parts": {
+          "frMul": 7616826,
+          "frAdd": 6388080,
+          "frInv": 5852550,
+          "g1Msm": 23449930,
+          "pairing": 14833973,
+          "keccak": 1249694
+        },
+        "txLimit": 100000000,
+        "fractionOfTxLimit": 0.59,
+        "note": "Host-function cost only (lower bound): excludes guest WASM for control flow, calldata parsing and Val conversions."
+      }
+    },
+    "recursive_verifier_n1": {
+      "logN": 20,
+      "proofBytes": 14592,
+      "publicInputs": 6,
+      "keccakProvingMs": 92360,
+      "solc": "0.8.30+commit.73712a01.Emscripten.clang",
+      "evm": {
+        "verified": true,
+        "rejectsTampered": true,
+        "calldataBytes": 14916,
+        "executionGas": 1992215,
+        "txGas": 2182403,
+        "runtimeBytecodeBytes": 21136,
+        "exceedsEip170": false,
+        "ops": {
+          "MULMOD": 1265,
+          "ADDMOD": 1120,
+          "keccakCalls": 76,
+          "keccakBytes": 17152,
+          "ecAdd": 69,
+          "ecMul": 70,
+          "pairing": 1,
+          "pairingPairs": 2,
+          "modexp": 230
+        }
+      },
+      "sorobanEstimate": {
+        "hostInstructions": 66551157,
+        "parts": {
+          "frMul": 9722790,
+          "frAdd": 8319360,
+          "frInv": 8973910,
+          "g1Msm": 23449930,
+          "pairing": 14833973,
+          "keccak": 1251194
+        },
+        "txLimit": 100000000,
+        "fractionOfTxLimit": 0.67,
+        "note": "Host-function cost only (lower bound): excludes guest WASM for control flow, calldata parsing and Val conversions."
+      }
+    }
+  },
+  "extrapolation": {
+    "gasPerLogNRound": 34299,
+    "aggregatedN5TxGasEst": 2251001,
+    "fiveInnerProofsTxGas": 9540060,
+    "note": "N=5 aggregate cannot be proven in WASM (4 GiB limit); its verifier differs from N=1 only by 2 more rounds (log n 22)."
+  }
+}
